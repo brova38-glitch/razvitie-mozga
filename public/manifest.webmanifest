@@ -1,0 +1,16 @@
+{
+  "name": "Развитие мозга",
+  "short_name": "Мозг",
+  "description": "Тренировки памяти, внимания и скорочтения, стихи наизусть.",
+  "lang": "ru",
+  "start_url": "/razvitie-mozga/",
+  "scope": "/razvitie-mozga/",
+  "display": "standalone",
+  "background_color": "#0d0f17",
+  "theme_color": "#6a5cff",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
