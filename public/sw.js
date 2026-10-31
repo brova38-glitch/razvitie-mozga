@@ -1,5 +1,5 @@
 // v3 — network-first for pages and the SW itself, cache-first only for hashed assets
-const VERSION = "rm-v4";
+const VERSION = "rm-v5";
 const BASE = self.registration.scope;
 self.addEventListener("install", (e) => {
   self.skipWaiting();

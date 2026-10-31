@@ -114,7 +114,12 @@ const CSS = `
 .mt-node:active { transform: translateY(7px); box-shadow: none !important }
 .mt-3d:hover:not(:disabled), .mt-node:hover { filter: brightness(1.06) }
 .mt-go { display: inline-block }
-html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; overscroll-behavior-y: none }
+*, *::before, *::after { box-sizing: border-box }
+#root > div { overflow-x: hidden; max-width: 100vw }
+[style*="display: flex"] > *, [style*="display: grid"] > * { min-width: 0 }
+input, textarea, select { max-width: 100%; min-width: 0 }
+img, svg { max-width: 100% }
+html, body { overflow-x: hidden; touch-action: manipulation; -webkit-text-size-adjust: 100%; overscroll-behavior-y: none }
 button { -webkit-tap-highlight-color: transparent; touch-action: manipulation }
 `;
 
@@ -302,7 +307,7 @@ function Schulte() {
   return (
     <Col>
       <Stats items={[["Найди", done ? "✓" : next], ["Время", `${secs.toFixed(1)} с`], ["Рекорд", best ? `${best.toFixed(1)} с` : "—"]]} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, width: "100%", maxWidth: 380, margin: "0 auto", position: "relative" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6, width: "100%", maxWidth: 380, margin: "0 auto", position: "relative" }}>
         {grid.map((v: number, i: number) => (
           <div key={v} className={`mt-press ${bad === i ? "mt-shake" : ""}`} onClick={() => tap(v, i)} style={{ aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 14, fontSize: 22, fontWeight: 600, cursor: "pointer", userSelect: "none", background: v < next ? t.fill.accentSubtle : bad === i ? t.fill.dangerSubtle : t.bg.base, color: v < next ? t.text.tertiary : t.text.primary, border: `1px solid ${t.border.subtle}` }}>{v}</div>
         ))}
@@ -401,7 +406,7 @@ function ReadTest() {
 const PAIR_LEVELS: [number, number][] = [[4, 3], [4, 4], [5, 4], [6, 4], [6, 5], [6, 6]];
 function Pairs() {
   const { t, row, grad, shadow } = useS();
-  const [level, setLevel] = useState(0);
+  const [level, setLevel] = useState(() => Math.min(PAIR_LEVELS.length - 1, Math.max(0, Number(new URLSearchParams(location.search).get("pairlvl")) || 0)));
   const [cards, setCards] = useState<string[]>([]);
   const [open, setOpen] = useState<number[]>([]);
   const [done, setDone] = useState<number[]>([]);
@@ -433,7 +438,7 @@ function Pairs() {
     <Col>
       <Stats items={[["Уровень", `${level + 1}/${PAIR_LEVELS.length}`], ["Ходы", moves], ["Время", `${secs} с`]]} />
       <Prog value={cards.length ? done.length / cards.length : 0} />
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 8, width: "100%", maxWidth: cols * 84, margin: "0 auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: cols >= 5 ? "clamp(4px, 1.5vw, 8px)" : 8, width: "100%", maxWidth: cols * 84, margin: "0 auto" }}>
         {cards.map((c: string, i: number) => {
           const shown = open.includes(i) || done.includes(i); const ok = done.includes(i);
           const face: CSSProperties = { position: "absolute", inset: 0, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
@@ -441,7 +446,7 @@ function Pairs() {
             <div key={i} onClick={() => click(i)} style={{ aspectRatio: "1", perspective: 600, cursor: "pointer" }}>
               <div style={{ position: "relative", width: "100%", height: "100%", transformStyle: "preserve-3d", transition: "transform .45s cubic-bezier(.3,.8,.3,1)", transform: shown ? "rotateY(180deg)" : "none" }}>
                 <div style={{ ...face, background: grad, boxShadow: shadow, opacity: 0.92 }}><span style={{ fontSize: 18, color: t.text.onColor, opacity: 0.8 }}>✦</span></div>
-                <div style={{ ...face, transform: "rotateY(180deg)", background: ok ? t.fill.successSubtle : t.bg.base, border: `2px solid ${ok ? t.text.success : t.border.default}`, fontSize: 30 }}><span className={ok ? "mt-pop" : ""}>{c}</span></div>
+                <div style={{ ...face, transform: "rotateY(180deg)", background: ok ? t.fill.successSubtle : t.bg.base, border: `2px solid ${ok ? t.text.success : t.border.default}`, fontSize: cols >= 5 ? "clamp(18px, 6vw, 28px)" : 30, borderRadius: cols >= 5 ? 12 : 16 }}><span className={ok ? "mt-pop" : ""}>{c}</span></div>
               </div>
             </div>
           );
@@ -533,7 +538,7 @@ function Simon() {
     <Col>
       <Stats items={[["Длина", seq.length || "—"], ["Рекорд", best || "—"]]} />
       {status ? <Hint>{status}</Hint> : null}
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12, width: "100%", maxWidth: cols * 120, margin: "0 auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: "clamp(6px, 3vw, 12px)", width: "100%", maxWidth: cols * 120, margin: "0 auto" }}>
         {Array.from({ length: size }).map((_: unknown, i: number) => {
           const on = lit === i;
           return <div key={i} onClick={() => tap(i)} style={{ aspectRatio: "1", borderRadius: 24, background: colors[i], opacity: on ? 1 : 0.28, transform: on ? "scale(1.06)" : "scale(1)", boxShadow: on ? `0 0 0 3px ${t.bg.elevated}, 0 0 32px 6px ${colors[i]}` : "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, cursor: phase === "input" ? "pointer" : "default", transition: "all .18s ease" }}>{icons[i]}</div>;
@@ -627,7 +632,7 @@ function Change() {
       <Stats items={[["Символов", n], ["Угадано", score]]} />
       {hint ? <Hint>{hint}</Hint> : null}
       {phase !== "idle" ? (
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 10, width: "100%", maxWidth: cols * 88, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: "clamp(5px, 2.5vw, 10px)", width: "100%", maxWidth: cols * 88, margin: "0 auto" }}>
           {grid.map((c: string, i: number) => {
             const isC = phase === "result" && i === changed; const isW = phase === "result" && i === pick && !right;
             return <div key={i} className={`mt-press ${isW ? "mt-shake" : isC ? "mt-pop" : ""}`} onClick={() => choose(i)} style={{ aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, borderRadius: 18, border: `2px solid ${isC ? t.text.success : isW ? t.text.danger : t.border.subtle}`, background: isC ? t.fill.successSubtle : isW ? t.fill.dangerSubtle : t.bg.base, boxShadow: phase === "find" ? shadow : "none", cursor: phase === "find" ? "pointer" : "default", userSelect: "none" }}><span style={{ opacity: phase === "blank" ? 0 : 1, transition: "opacity .3s" }}>{c}</span></div>;
@@ -700,7 +705,7 @@ function NBack() {
     <Col>
       <div style={row}><Chips options={[[1, "1-назад"], [2, "2-назад"], [3, "3-назад"]]} value={n} onChange={(v: number) => { if (i < 0) setN(v); }} /><Chips options={[["s", "Одиночный"], ["d", "Двойной"]]} value={dual ? "d" : "s"} onChange={(v: string) => { if (i < 0) setDual(v === "d"); }} /></div>
       <Stats items={[["Уровень", `${n}-назад`], ["Ход", i >= 0 ? `${i + 1}/${seq.length}` : "—"], ["Точность", res !== null ? `${res}%` : "—"]]} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, width: "100%", maxWidth: 300, margin: "0 auto", borderRadius: 20, padding: 8, background: flash === "good" ? t.fill.successSubtle : flash === "bad" ? t.fill.dangerSubtle : t.bg.subtle, transition: "background .2s" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, width: "100%", maxWidth: 300, margin: "0 auto", borderRadius: 20, padding: 8, background: flash === "good" ? t.fill.successSubtle : flash === "bad" ? t.fill.dangerSubtle : t.bg.subtle, transition: "background .2s" }}>
         {Array.from({ length: 9 }).map((_: unknown, k: number) => {
           const on = !!cur && show && cur.p === k;
           return <div key={k} style={{ aspectRatio: "1", borderRadius: 14, background: on ? c[0] : t.bg.base, boxShadow: on ? `0 0 24px ${c[0]}` : "none", transform: on ? "scale(1.04)" : "none", transition: "all .2s", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, fontWeight: 700, color: t.text.onColor }}>{on && dual ? cur.l : ""}</div>;
@@ -767,7 +772,7 @@ function FacesGame() {
             {opts.map((nm: string) => {
               const right = nm === set[order[qi]][1];
               const bg = picked && right ? t.fill.successSubtle : picked === nm ? t.fill.dangerSubtle : t.bg.subtle;
-              return <button key={nm} className="mt-press" onClick={() => choose(nm)} style={{ minHeight: 48, minWidth: 110, borderRadius: 16, border: `1px solid ${t.border.subtle}`, background: bg, color: t.text.primary, fontFamily: t.font.family, fontSize: 17, fontWeight: 600, cursor: "pointer" }}>{nm}</button>;
+              return <button key={nm} className="mt-press" onClick={() => choose(nm)} style={{ minHeight: 48, minWidth: 0, flex: "1 1 110px", borderRadius: 16, border: `1px solid ${t.border.subtle}`, background: bg, color: t.text.primary, fontFamily: t.font.family, fontSize: 17, fontWeight: 600, cursor: "pointer" }}>{nm}</button>;
             })}
           </div>
         </Col>
@@ -932,7 +937,7 @@ function Stroop() {
         {k >= 0 ? <span key={k} className="mt-pop" style={{ display: "inline-block", fontSize: 44, fontWeight: 800, color: COLS[tr[1]][1], textTransform: "uppercase" }}>{COLS[tr[0]][0]}</span> : <span style={{ fontSize: 17, color: t.text.secondary }}>Выбирай цвет букв, а не смысл слова</span>}
       </div>
       {k >= 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
           {COLS.map(([nm, col]: [string, string], i: number) => (
             <button key={nm} className="mt-press" onClick={() => ans(i)} style={{ minHeight: 52, borderRadius: 16, border: `1px solid ${t.border.subtle}`, background: t.bg.base, color: t.text.primary, fontFamily: t.font.family, fontSize: 16, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ width: 16, height: 16, borderRadius: 99, background: col }} />{nm}
@@ -1216,11 +1221,11 @@ function PathUnit(p: { u: Unit; onOpen: (id: string) => void }) {
         {p.u.items.map((x: Item, k: number) => {
           const locked = k > 0 && st[k - 1] === 0 && st[k] === 0;
           const isCur = k === cur;
-          const dx = Math.round(Math.sin(k * 1.1) * 72);
+          const dx = Math.sin(k * 1.1).toFixed(3);
           const bg = locked ? t.bg.subtle : p.u.col[0];
           const edge = locked ? t.border.default : p.u.col[1];
           return (
-            <div key={x.id} style={{ transform: `translateX(${dx}px)`, marginBottom: 14 }}><div className="mt-fade" style={{ animationDelay: `${k * 50}ms`, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+            <div key={x.id} style={{ transform: `translateX(calc(${dx} * min(60px, 15vw)))`, marginBottom: 14 }}><div className="mt-fade" style={{ animationDelay: `${k * 50}ms`, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
               {isCur ? <div className="mt-bob" style={{ background: t.bg.elevated, border: `2px solid ${t.border.default}`, color: p.u.col[1], fontWeight: 900, fontSize: 13, letterSpacing: 0.6, padding: "5px 12px", borderRadius: 12, marginBottom: 8 }}>НАЧАТЬ</div> : null}
               <button className={"mt-node" + (isCur ? " mt-pulse" : "")} aria-label={x.name} onClick={() => {
                 if (locked) { buzz([30, 40, 30]); play("bad"); toast("🔒 Сначала пройди предыдущий урок"); return; }
@@ -1228,7 +1233,7 @@ function PathUnit(p: { u: Unit; onOpen: (id: string) => void }) {
               }} style={{ width: 76, height: 70, borderRadius: "50%", border: "none", background: bg, boxShadow: `0 7px 0 ${edge}`, fontSize: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", ["--c" as string]: p.u.col[0] } as CSSProperties}>
                 <span style={{ filter: locked ? "grayscale(1)" : "none", opacity: locked ? 0.5 : 1 }}>{locked ? "🔒" : st[k] >= 3 ? "👑" : x.icon}</span>
               </button>
-              <div style={{ marginTop: 10, maxWidth: 150, textAlign: "center", fontSize: 13, fontWeight: 800, color: locked ? t.text.tertiary : t.text.primary, lineHeight: "16px" }}>{x.name}</div>
+              <div style={{ marginTop: 10, maxWidth: 160, textAlign: "center", fontSize: 13, overflowWrap: "anywhere", fontWeight: 800, color: locked ? t.text.tertiary : t.text.primary, lineHeight: "16px" }}>{x.name}</div>
               {st[k] > 0 ? <Stars n={st[k]} size={13} /> : null}
             </div></div>
           );
@@ -1354,7 +1359,7 @@ function Profile() {
         {POEMS.map((q: Poem) => { const ok = g.poems.includes(q.t); return <div key={q.t} style={{ padding: "8px 12px", borderRadius: 14, border: `2px solid ${ok ? PAL.purple[0] : t.border.subtle}`, background: ok ? t.bg.elevated : "transparent", color: ok ? t.text.primary : t.text.tertiary, fontSize: 13, fontWeight: 800 }}>{ok ? "✓ " : ""}{q.t}</div>; })}
       </div>
       {h2(`🎖️ Достижения · ${ach.length}/${ACHS.length}`)}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
         {ACHS.map((a: Ach) => { const ok = ach.includes(a.id); return (
           <div key={a.id} style={{ border: `2px solid ${ok ? PAL.yellow[0] : t.border.subtle}`, boxShadow: ok ? `0 4px 0 ${PAL.yellow[1]}` : "none", background: t.bg.elevated, borderRadius: 18, padding: "12px 6px", textAlign: "center", display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
             <span style={{ fontSize: 32, filter: ok ? "none" : "grayscale(1)", opacity: ok ? 1 : 0.35 }}>{a.icon}</span>
