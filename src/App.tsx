@@ -75,6 +75,11 @@ const CSS = `
 .mt-fade { animation: mtFade .45s ease both }
 .mt-press { transition: transform .15s ease, box-shadow .2s ease, background .2s ease, opacity .2s ease, border-color .2s }
 .mt-press:active { transform: scale(.95) }
+.mt-plan { transition: transform .2s ease, background .2s ease }
+.mt-plan:hover { transform: translateX(4px) }
+.mt-plan:active { transform: scale(.97) }
+.mt-go { transition: transform .2s ease }
+.mt-plan:hover .mt-go { transform: translateX(4px) }
 `;
 
 // ================= ui =================
@@ -1020,8 +1025,8 @@ const DESC: Record<string, string> = {
   react: "Нажми, как только поле станет зелёным.",
 };
 
-function Sub(p: { items: Item[]; render: (id: string) => ReactNode }) {
-  const [id, setId] = useState(p.items[0].id);
+function Sub(p: { items: Item[]; render: (id: string) => ReactNode; initial?: string }) {
+  const [id, setId] = useState(p.items.some((x: Item) => x.id === p.initial) ? (p.initial as string) : p.items[0].id);
   const it = p.items.find((x: Item) => x.id === id) || p.items[0];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1040,6 +1045,7 @@ const PLAN: [string, string, string, string][] = [
   ["3 мин", "📜", "Стихи наизусть", "Один шаг тренажёра; вчерашний стих — шаг «Проверка»"],
   ["1 мин", "🎨", "Тест Струпа", "Финальный рывок"],
 ];
+const PLAN_GO: [Tab, string][] = [["mind", "react"], ["read", "schulte"], ["read", "rsvp"], ["mem", "nback"], ["mem", "pairs"], ["poem", "poem"], ["mind", "stroop"]];
 const TIPS: [string, string, string, string][] = [
   ["🔁", "Вспоминай, а не перечитывай", "Самопроверка и повторы с паузами (через день, 3 дня, неделю) — один из самых надёжных способов запоминать.", "Сильные доказательства"],
   ["😴", "Сон 7–9 часов", "Во сне мозг закрепляет то, что ты узнала за день.", "Сильные доказательства"],
@@ -1059,7 +1065,14 @@ export default function App() {
   const streak = useStreak();
   const [learnedAll] = usePersist<string[]>("poems", []);
   const top = useRef<HTMLDivElement>(null);
-  const pick = (x: Tab) => { setTab(x); if (top.current) top.current.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const [sel, setSel] = useState("");
+  const [cur, setCur] = useState(-1);
+  const [walk, setWalk] = useState(false);
+  const [done, setDone] = usePersist<number[]>("plan:" + new Date().toDateString(), []);
+  const toTop = () => { setTimeout(() => { if (top.current) top.current.scrollIntoView({ behavior: "smooth", block: "start" }); }, 30); };
+  const pick = (x: Tab) => { setTab(x); setSel(""); setCur(-1); setWalk(false); toTop(); };
+  const go = (i: number, w: boolean) => { const [tb, id] = PLAN_GO[i]; setTab(tb); setSel(id); setCur(i); setWalk(w); toTop(); };
+  const finish = () => { const nd = done.includes(cur) ? done : done.concat(cur); setDone(nd); if (walk && cur < PLAN.length - 1) { go(cur + 1, true); } else { if (nd.length >= PLAN.length) fireConfetti(); setTab("info"); setSel(""); setCur(-1); setWalk(false); toTop(); } };
   return (
     <div style={{ fontFamily: t.font.family, color: t.text.primary, background: t.bg.base, minHeight: "100%", padding: "16px 14px 48px", boxSizing: "border-box" }}>
       <style>{CSS}</style>
@@ -1087,19 +1100,37 @@ export default function App() {
           })}
         </div>
 
-        <div key={tab} className="mt-fade" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {tab === "read" ? <Sub items={READ_ITEMS} render={(id: string) => id === "rsvp" ? <Rsvp /> : id === "schulte" ? <Schulte /> : id === "periph" ? <Periph /> : <ReadTest />} /> : null}
-          {tab === "mem" ? <Sub items={MEM_ITEMS} render={(id: string) => id === "pairs" ? <Pairs /> : id === "number" ? <NumberGame /> : id === "simon" ? <Simon /> : id === "words" ? <WordsGame /> : id === "change" ? <Change /> : id === "nback" ? <NBack /> : id === "faces" ? <FacesGame /> : <Loci />} /> : null}
+        <div key={`${tab}-${sel}-${cur}`} className="mt-fade" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {cur >= 0 && tab !== "info" ? (
+            <div style={{ ...card, padding: 14, gap: 10, background: t.fill.accentSubtle, border: `1px solid ${c[0]}` }}>
+              <div style={{ fontSize: 13, color: t.text.accent, fontWeight: 600 }}>📋 {walk ? `План · задание ${cur + 1} из ${PLAN.length}` : "Задание из плана"} · {PLAN[cur][0]}</div>
+              <div style={{ fontSize: 17, fontWeight: 650 }}>{PLAN[cur][1]} {PLAN[cur][2]} — <span style={{ fontWeight: 400, color: t.text.secondary }}>{PLAN[cur][3]}</span></div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <Btn primary label={walk && cur < PLAN.length - 1 ? "Следующее задание →" : walk ? "Завершить план ✓" : "Готово ✓"} onClick={finish} />
+                <Btn label="← К плану" onClick={() => pick("info")} />
+              </div>
+            </div>
+          ) : null}
+          {tab === "read" ? <Sub initial={sel} items={READ_ITEMS} render={(id: string) => id === "rsvp" ? <Rsvp /> : id === "schulte" ? <Schulte /> : id === "periph" ? <Periph /> : <ReadTest />} /> : null}
+          {tab === "mem" ? <Sub initial={sel} items={MEM_ITEMS} render={(id: string) => id === "pairs" ? <Pairs /> : id === "number" ? <NumberGame /> : id === "simon" ? <Simon /> : id === "words" ? <WordsGame /> : id === "change" ? <Change /> : id === "nback" ? <NBack /> : id === "faces" ? <FacesGame /> : <Loci />} /> : null}
           {tab === "poem" ? <GameCard item={{ id: "poem", icon: "📜", name: "Стихи наизусть", short: "" }} desc="Пять шагов: читаем, первые буквы, пропуски, по строкам, проверка. Учи одно стихотворение несколько дней."><PoemTrainer /></GameCard> : null}
-          {tab === "mind" ? <Sub items={MIND_ITEMS} render={(id: string) => id === "stroop" ? <Stroop /> : id === "math" ? <MathGame /> : <Reaction />} /> : null}
+          {tab === "mind" ? <Sub initial={sel} items={MIND_ITEMS} render={(id: string) => id === "stroop" ? <Stroop /> : id === "math" ? <MathGame /> : <Reaction />} /> : null}
           {tab === "info" ? (
             <Fragment0>
               <div style={{ fontSize: 22, fontWeight: 650, margin: "4px 4px 0" }}>План на день · 15 минут</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                <Btn primary label={done.length && done.length < PLAN.length ? "▶ Продолжить план" : "▶ Начать план"} onClick={() => { const n = PLAN.findIndex((_: unknown, i: number) => !done.includes(i)); go(n < 0 ? 0 : n, true); }} />
+                <span style={{ fontSize: 14, color: t.text.secondary }}>Сегодня выполнено: {done.length} из {PLAN.length}</span>
+              </div>
+              <Prog value={done.length / PLAN.length} />
               <div style={{ ...card, gap: 0, padding: "6px 20px" }}>
                 {PLAN.map(([m, ic, nm, d]: [string, string, string, string], i: number) => (
-                  <div key={i} className="mt-fade" style={{ animationDelay: `${i * 60}ms`, display: "flex", gap: 14, alignItems: "center", padding: "14px 0", borderTop: i ? `1px solid ${t.border.subtle}` : "none" }}>
-                    <div style={{ flex: "0 0 auto", padding: "6px 10px", borderRadius: 999, background: t.fill.accentSubtle, color: t.text.accent, fontSize: 13, fontWeight: 600 }}>{m}</div>
-                    <div style={{ minWidth: 0 }}><div style={{ fontSize: 16, fontWeight: 600 }}>{ic} {nm}</div><div style={{ fontSize: 14, color: t.text.secondary }}>{d}</div></div>
+                  <div key={i} className="mt-fade" style={{ animationDelay: `${i * 60}ms`, borderTop: i ? `1px solid ${t.border.subtle}` : "none" }}>
+                    <div role="button" tabIndex={0} className="mt-plan" onClick={() => go(i, false)} onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => { if (e.key === "Enter" || e.key === " ") go(i, false); }} style={{ display: "flex", gap: 14, alignItems: "center", padding: "14px 0", cursor: "pointer" }}>
+                      <div style={{ flex: "0 0 auto", padding: "6px 10px", borderRadius: 999, background: done.includes(i) ? t.fill.successSubtle : t.fill.accentSubtle, color: done.includes(i) ? t.text.success : t.text.accent, fontSize: 13, fontWeight: 600 }}>{done.includes(i) ? "✓ " : ""}{m}</div>
+                      <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 16, fontWeight: 600, textDecoration: done.includes(i) ? "line-through" : "none", opacity: done.includes(i) ? 0.7 : 1 }}>{ic} {nm}</div><div style={{ fontSize: 14, color: t.text.secondary }}>{d}</div></div>
+                      <div className="mt-go" style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 4, padding: "8px 12px", borderRadius: 999, background: t.bg.subtle, color: t.text.accent, fontSize: 14, fontWeight: 600 }}>Начать <span style={{ fontSize: 16 }}>→</span></div>
+                    </div>
                   </div>
                 ))}
               </div>
