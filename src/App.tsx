@@ -1,7 +1,12 @@
+import { createPortal } from "react-dom";
 import { useState, useEffect, useRef, useMemo } from "react";
 import type { KeyboardEvent, ChangeEvent, CSSProperties, ReactNode } from "react";
 import { useGrokTheme } from "./theme";
-import { usePersist, markPractice, useStreak } from "./storage";
+import { usePersist, useStreak, read } from "./storage";
+import { PAL } from "./theme";
+import { play, buzz } from "./sfx";
+import { session, resetSession, reportMax, complete, migrate, checkAchs, levelOf, xpFor, today, DAILY_GOAL, MAX_LEVEL, ACHS } from "./game";
+import type { Result, Ach } from "./game";
 
 // ================= data =================
 const EMOJI = ["🍎", "🐱", "🌻", "🚗", "⭐", "🎈", "🐟", "🍀", "🎵", "🌙", "🍓", "🦋", "⚽", "🔑", "🎁", "🐝", "🍩", "☂️", "🐢", "🌈", "🔔", "🍉", "🦊", "🚀"];
@@ -80,25 +85,57 @@ const CSS = `
 .mt-plan:active { transform: scale(.97) }
 .mt-go { transition: transform .2s ease }
 .mt-plan:hover .mt-go { transform: translateX(4px) }
+@keyframes mtFloat { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+@keyframes mtBounce { 0% { transform: scale(1) } 30% { transform: scale(1.25) translateY(-3px) } 60% { transform: scale(.95) } 100% { transform: scale(1) } }
+@keyframes mtWiggle { 0%,100% { transform: rotate(0) } 25% { transform: rotate(-12deg) } 75% { transform: rotate(12deg) } }
+@keyframes mtSlide { from { opacity: 0; transform: translateX(24px) } to { opacity: 1; transform: none } }
+@keyframes mtFly { 0% { opacity: 0; transform: translate(-50%, 20px) scale(.6) } 25% { opacity: 1; transform: translate(-50%, -10px) scale(1.15) } 100% { opacity: 0; transform: translate(-50%, -90px) scale(1) } }
+@keyframes mtPulse { 0% { box-shadow: 0 7px 0 var(--e, rgba(0,0,0,.2)), 0 0 0 0 var(--c) } 70% { box-shadow: 0 7px 0 var(--e, rgba(0,0,0,.2)), 0 0 0 14px transparent } 100% { box-shadow: 0 7px 0 var(--e, rgba(0,0,0,.2)), 0 0 0 0 transparent } }
+@keyframes mtBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
+@keyframes mtJump { 0% { transform: scale(.4) translateY(30px); opacity: 0 } 50% { transform: scale(1.1) translateY(-14px); opacity: 1 } 70% { transform: scale(.95) } 100% { transform: scale(1) } }
+@keyframes mtStar { 0% { transform: scale(0) rotate(-90deg) } 70% { transform: scale(1.35) rotate(10deg) } 100% { transform: scale(1) } }
+@keyframes mtToast { 0% { opacity: 0; transform: translate(-50%, -14px) } 12%, 85% { opacity: 1; transform: translate(-50%, 0) } 100% { opacity: 0; transform: translate(-50%, -8px) } }
+@keyframes mtLvl { 0% { transform: scale(0) rotate(-180deg) } 70% { transform: scale(1.15) rotate(10deg) } 100% { transform: scale(1) } }
+@keyframes mtFadeIn { from { opacity: 0 } to { opacity: 1 } }
+.mt-float { animation: mtFloat 3s ease-in-out infinite }
+.mt-bounce { animation: mtBounce .45s ease both }
+.mt-wiggle { animation: mtWiggle .5s ease 3 }
+.mt-slide { animation: mtSlide .35s cubic-bezier(.2,.9,.3,1) both }
+.mt-fly { animation: mtFly 1.6s .5s ease-out both }
+.mt-bob { animation: mtBob 1.4s ease-in-out infinite }
+.mt-jump { animation: mtJump .7s cubic-bezier(.2,.9,.3,1.2) both }
+.mt-starpop { display: inline-block; animation: mtStar .5s cubic-bezier(.2,.9,.3,1.3) both }
+.mt-toast { animation: mtToast 2.2s ease both }
+.mt-levelbadge { animation: mtLvl .8s cubic-bezier(.2,.9,.3,1.2) both }
+.mt-fadein { animation: mtFadeIn .3s ease both }
+.mt-pulse { animation: mtPulse 1.6s ease-out infinite }
+.mt-3d, .mt-node { transition: transform .08s ease, box-shadow .08s ease, filter .15s; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none }
+.mt-3d:active:not(:disabled) { transform: translateY(4px); box-shadow: none !important }
+.mt-node:active { transform: translateY(7px); box-shadow: none !important }
+.mt-3d:hover:not(:disabled), .mt-node:hover { filter: brightness(1.06) }
+.mt-go { display: inline-block }
+html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; overscroll-behavior-y: none }
+button { -webkit-tap-highlight-color: transparent; touch-action: manipulation }
 `;
 
 // ================= ui =================
 function useS() {
   const t = useGrokTheme();
   const c = t.dataviz.categorical;
-  const shadow = t.kind === "dark" ? "0 10px 30px rgba(0,0,0,.45)" : "0 10px 30px rgba(20,30,60,.10)";
-  const card: CSSProperties = { position: "relative", background: t.bg.elevated, border: `1px solid ${t.border.subtle}`, borderRadius: 24, padding: 20, boxShadow: shadow, display: "flex", flexDirection: "column", gap: 16, fontFamily: t.font.family, color: t.text.primary };
+  const shadow = `0 4px 0 ${t.border.subtle}`;
+  const card: CSSProperties = { position: "relative", background: t.bg.elevated, border: `2px solid ${t.border.subtle}`, borderRadius: 22, padding: 20, boxShadow: shadow, display: "flex", flexDirection: "column", gap: 16, fontFamily: t.font.family, color: t.text.primary };
   const row: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" };
   const muted: CSSProperties = { color: t.text.secondary, fontSize: 15, lineHeight: "22px" };
   const input: CSSProperties = { width: "100%", boxSizing: "border-box", padding: "14px 16px", borderRadius: 16, border: `1px solid ${t.border.default}`, background: t.bg.base, color: t.text.primary, fontFamily: t.font.family, fontSize: 18, outline: "none" };
-  const grad = `linear-gradient(135deg, ${c[0]}, ${c[2]})`;
+  const grad = `linear-gradient(135deg, ${PAL.green[0]}, ${PAL.blue[0]})`;
   return { t, c, shadow, card, row, muted, input, grad };
 }
 
 function Btn(p: { label: string; onClick: () => void; primary?: boolean; disabled?: boolean }) {
-  const { t, grad } = useS();
+  const { t } = useS();
+  const edge = p.primary ? PAL.green[1] : t.border.default;
   return (
-    <button className="mt-press" disabled={p.disabled} onClick={() => { markPractice(); p.onClick(); }} style={{ minHeight: 46, padding: "0 20px", borderRadius: 999, border: p.primary ? "none" : `1px solid ${t.border.default}`, background: p.primary ? grad : t.bg.subtle, color: p.primary ? t.text.onColor : t.text.primary, fontFamily: t.font.family, fontSize: 16, fontWeight: 600, cursor: p.disabled ? "default" : "pointer", opacity: p.disabled ? 0.5 : 1 }}>{p.label}</button>
+    <button className="mt-3d" disabled={p.disabled} onClick={() => { buzz(8); play("tap"); p.onClick(); }} style={{ minHeight: 48, padding: "0 20px", borderRadius: 16, border: p.primary ? "none" : `2px solid ${edge}`, background: p.primary ? PAL.green[0] : t.bg.elevated, color: p.primary ? "#fff" : t.text.primary, boxShadow: `0 4px 0 ${edge}`, fontFamily: t.font.family, fontSize: 16, fontWeight: 800, cursor: p.disabled ? "default" : "pointer", opacity: p.disabled ? 0.5 : 1 }}>{p.label}</button>
   );
 }
 
@@ -131,6 +168,7 @@ function Prog(p: { value: number }) {
 
 function Msg(p: { good: boolean; children?: ReactNode }) {
   const { t } = useS();
+  useEffect(() => { if (p.good) { session.good++; play("good"); buzz(15); } else { session.bad++; play("bad"); buzz([40, 30, 40]); } }, []);
   return <div className={p.good ? "mt-pop" : "mt-shake"} style={{ padding: "12px 16px", borderRadius: 16, background: p.good ? t.fill.successSubtle : t.fill.warningSubtle, color: p.good ? t.text.success : t.text.warning, fontWeight: 500, fontSize: 15, lineHeight: "21px" }}>{p.children}</div>;
 }
 
@@ -140,12 +178,12 @@ function Hint(p: { children?: ReactNode }) {
 }
 
 function Chips<T extends string | number>(p: { options: [T, string][]; value: T; onChange: (v: T) => void }) {
-  const { t, c } = useS();
+  const { t } = useS();
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {p.options.map(([v, l]: [T, string]) => {
         const on = v === p.value;
-        return <button key={String(v)} className="mt-press" onClick={() => p.onChange(v)} style={{ minHeight: 38, padding: "0 14px", borderRadius: 999, border: `1px solid ${on ? c[0] : t.border.subtle}`, background: on ? t.fill.accentSubtle : "transparent", color: on ? t.text.accent : t.text.secondary, fontFamily: t.font.family, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>{l}</button>;
+        return <button key={String(v)} className="mt-press" onClick={() => p.onChange(v)} style={{ minHeight: 40, padding: "0 14px", borderRadius: 14, border: `2px solid ${on ? PAL.blue[0] : t.border.default}`, fontWeight: 800, background: on ? t.fill.accentSubtle : "transparent", color: on ? t.text.accent : t.text.secondary, fontFamily: t.font.family, fontSize: 14, cursor: "pointer" }}>{l}</button>;
       })}
     </div>
   );
@@ -174,23 +212,6 @@ function Confetti() {
 }
 
 type Item = { id: string; icon: string; name: string; short: string };
-function Picker(p: { items: Item[]; value: string; onChange: (v: string) => void }) {
-  const { t, c } = useS();
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
-      {p.items.map((x: Item) => {
-        const on = x.id === p.value;
-        return (
-          <div key={x.id} className="mt-press" onClick={() => p.onChange(x.id)} style={{ cursor: "pointer", padding: 14, borderRadius: 20, background: on ? t.bg.elevated : t.bg.subtle, border: `2px solid ${on ? c[0] : "transparent"}`, boxShadow: on ? `0 8px 24px ${c[0]}33` : "none", transform: on ? "translateY(-2px)" : "none", display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 26 }}>{x.icon}</span>
-            <span style={{ fontSize: 15, fontWeight: 600, color: t.text.primary, lineHeight: "19px" }}>{x.name}</span>
-            <span style={{ fontSize: 12, color: t.text.tertiary, lineHeight: "16px" }}>{x.short}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function GameCard(p: { item: Item; desc: string; children?: ReactNode }) {
   const { t, card, grad } = useS();
@@ -221,7 +242,7 @@ function Rsvp() {
   useEffect(() => { setIdx(0); setPlaying(false); }, [ti, chunk]);
   useEffect(() => {
     if (!playing) return;
-    if (idx >= chunks.length - 1) { setPlaying(false); fireConfetti(); return; }
+    if (idx >= chunks.length - 1) { setPlaying(false); fireConfetti(); reportMax("wpm", wpm); session.good++; return; }
     const cur = chunks[idx].join(" ");
     const pause = /[.!?]$/.test(cur) ? 1.8 : /[,;:—]$/.test(cur) ? 1.3 : 1;
     const id = setTimeout(() => setIdx(idx + 1), (60000 / wpm) * chunks[idx].length * pause);
@@ -346,7 +367,7 @@ function ReadTest() {
       {phase === "read" ? (
         <Col>
           <div style={{ fontSize: 18, lineHeight: "29px", color: t.text.primary, padding: "4px 2px" }}>{tx.body}</div>
-          <div style={row}><Btn primary label="Прочитала" onClick={() => { setSecs((Date.now() - st) / 1000); setPhase("quiz"); }} /></div>
+          <div style={row}><Btn primary label="Готово, прочитано" onClick={() => { setSecs((Date.now() - st) / 1000); setPhase("quiz"); }} /></div>
         </Col>
       ) : null}
       {phase === "quiz" ? (
@@ -462,7 +483,7 @@ function NumberGame() {
       {phase === "ask" ? <Col><TextIn big numeric value={answer} onChange={setAnswer} onEnter={check} placeholder="Какое было число?" /><div style={row}><Btn primary label="Проверить" onClick={check} /></div></Col> : null}
       {phase === "result" ? (
         <Col>
-          <Msg good={ok}>{ok ? "Верно! Следующее число будет на одну цифру длиннее." : `Почти! Было ${num}, ты ввела ${answer || "—"}. Попробуем ещё раз.`}</Msg>
+          <Msg good={ok}>{ok ? "Верно! Следующее число будет на одну цифру длиннее." : `Почти! Было ${num}, введено ${answer || "—"}. Попробуем ещё раз.`}</Msg>
           <div style={row}><Btn primary label={ok ? "Дальше →" : "Ещё раз"} onClick={next} />{len > 3 ? <Btn label="Короче" onClick={() => { setLen(len - 1); go(len - 1); }} /> : null}</div>
         </Col>
       ) : null}
@@ -555,7 +576,7 @@ function WordsGame() {
           <div style={{ display: "flex", justifyContent: "space-between", color: t.text.secondary, fontSize: 15 }}><span>Запоминай! Свяжи слова в историю.</span><span>{left} с</span></div>
           <div style={{ height: 6, borderRadius: 99, background: t.bg.subtle, overflow: "hidden" }}><div style={{ height: "100%", width: `${(left / total) * 100}%`, background: grad, transition: "width 1s linear" }} /></div>
           <div style={row}>{list.map((w: string, i: number) => chip(w, "plain", i))}</div>
-          <div style={row}><Btn label="Я запомнила" onClick={() => setPhase("ask")} /></div>
+          <div style={row}><Btn label="Запомнено ✓" onClick={() => setPhase("ask")} /></div>
         </Col>
       ) : null}
       {phase === "ask" ? (
@@ -568,7 +589,7 @@ function WordsGame() {
       ) : null}
       {phase === "result" ? (
         <Col>
-          <Msg good={good}>Ты вспомнила {hits.length} из {list.length}.</Msg>
+          <Msg good={good}>Вспомнено: {hits.length} из {list.length}.</Msg>
           <Prog value={hits.length / Math.max(1, list.length)} />
           <div style={row}>{list.map((w: string, i: number) => chip(w, typed.includes(norm(w)) ? "good" : "miss", i))}</div>
           <div style={row}>
@@ -661,6 +682,8 @@ function NBack() {
         }
         const pct = Math.round((ok / tot) * 100);
         setRes(pct); setI(-1);
+        if (pct >= 80) reportMax("nback", n);
+        if (pct >= 70) session.good++; else session.bad++;
         if (pct >= 85) fireConfetti();
       } else { setI(i + 1); setShow(true); }
     }, 2500);
@@ -733,7 +756,7 @@ function FacesGame() {
               </div>
             ))}
           </div>
-          <div style={row}><Btn primary label="Я запомнила" onClick={() => { setOrder(shuffle(set.map((_: [string, string], j: number) => j))); setPhase("quiz"); }} /></div>
+          <div style={row}><Btn primary label="Запомнено ✓" onClick={() => { setOrder(shuffle(set.map((_: [string, string], j: number) => j))); setPhase("quiz"); }} /></div>
         </Col>
       ) : null}
       {phase === "quiz" && order.length ? (
@@ -814,9 +837,9 @@ function splitTok(w: string): [string, string, string] {
   const m = w.match(/^([^А-Яа-яЁёA-Za-z]*)([А-Яа-яЁёA-Za-z-]+)(.*)$/);
   return m ? [m[1], m[2], m[3]] : [w, "", ""];
 }
-function PoemTrainer() {
+function PoemTrainer(props: { initial?: number }) {
   const { t, row, muted, c } = useS();
-  const [pi, setPi] = useState(0);
+  const [pi, setPi] = useState(props.initial || 0);
   const [mode, setMode] = useState<"read" | "letters" | "blanks" | "lines" | "test">("read");
   const [pct, setPct] = useState(30);
   const [seed, setSeed] = useState(0);
@@ -871,7 +894,7 @@ function PoemTrainer() {
         })}
       </div>
       {mode === "read" ? <div style={muted}>Прочитай вслух 3 раза, медленно, представляя картинку. Потом переходи к шагу 2.</div> : null}
-      {mode === "letters" ? <div style={muted}>Читай вслух по первым буквам. Если запнулась — вернись к шагу 1.</div> : null}
+      {mode === "letters" ? <div style={muted}>Читай вслух по первым буквам. Если есть запинки — вернись к шагу 1.</div> : null}
       {mode === "blanks" ? <Col><Chips options={[[30, "30%"], [60, "60%"], [100, "Все слова"]]} value={pct} onChange={(v: number) => setPct(v)} /><div style={muted}>Проговори пропущенные слова. Нажми на пропуск, чтобы подсмотреть.</div><div style={row}><Btn label="Другие пропуски" onClick={() => setSeed(seed + 1)} /></div></Col> : null}
       {mode === "lines" ? <Col><div style={muted}>Скажи следующую строку по памяти, потом открой её и проверь себя.</div><div style={row}>{shown < p.lines.length ? <Btn primary label="Открыть следующую строку" onClick={() => setShown(shown + 1)} /> : <Btn label="Сначала" onClick={() => setShown(1)} />}</div></Col> : null}
       {mode === "test" ? (
@@ -1013,7 +1036,7 @@ const DESC: Record<string, string> = {
   periph: "Удерживай взгляд в центре и замечай цифры по краям. Поле постепенно расширяется.",
   test: "Прочитай текст, ответь на вопросы и узнай свою скорость.",
   pairs: "Открывай по две карточки и ищи одинаковые.",
-  number: "Запомни число и введи его. Угадала — число станет длиннее.",
+  number: "Запомни число и введи его. Верно — число станет длиннее.",
   simon: "Плитки загораются по очереди — повтори порядок.",
   words: "Запомни список слов, потом вспомни как можно больше.",
   change: "Запомни символы — после паузы один заменится.",
@@ -1024,17 +1047,6 @@ const DESC: Record<string, string> = {
   math: "Решай примеры как можно быстрее за 60 секунд.",
   react: "Нажми, как только поле станет зелёным.",
 };
-
-function Sub(p: { items: Item[]; render: (id: string) => ReactNode; initial?: string }) {
-  const [id, setId] = useState(p.items.some((x: Item) => x.id === p.initial) ? (p.initial as string) : p.items[0].id);
-  const it = p.items.find((x: Item) => x.id === id) || p.items[0];
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <Picker items={p.items} value={id} onChange={setId} />
-      <GameCard key={id} item={it} desc={DESC[id]}>{p.render(id)}</GameCard>
-    </div>
-  );
-}
 
 const PLAN: [string, string, string, string][] = [
   ["1 мин", "⚡", "Реакция", "Разбудить внимание"],
@@ -1048,7 +1060,7 @@ const PLAN: [string, string, string, string][] = [
 const PLAN_GO: [Tab, string][] = [["mind", "react"], ["read", "schulte"], ["read", "rsvp"], ["mem", "nback"], ["mem", "pairs"], ["poem", "poem"], ["mind", "stroop"]];
 const TIPS: [string, string, string, string][] = [
   ["🔁", "Вспоминай, а не перечитывай", "Самопроверка и повторы с паузами (через день, 3 дня, неделю) — один из самых надёжных способов запоминать.", "Сильные доказательства"],
-  ["😴", "Сон 7–9 часов", "Во сне мозг закрепляет то, что ты узнала за день.", "Сильные доказательства"],
+  ["😴", "Сон 7–9 часов", "Во сне мозг закрепляет то, всё новое за день.", "Сильные доказательства"],
   ["🚶‍♀️", "Движение", "Регулярные прогулки и спорт полезны для памяти и настроения.", "Хорошие доказательства"],
   ["🏛️", "Метод мест и группировка", "Образы на знакомом маршруте и разбиение на кусочки (8-916-123-45-67) резко увеличивают объём запоминаемого.", "Хорошие доказательства"],
   ["🧠", "N-назад и игры", "Тренировки улучшают результат в самих упражнениях. Перенос на «общий ум» в исследованиях маленький — поэтому важно и учить настоящие вещи, например стихи.", "Эффект в основном в самом упражнении"],
@@ -1056,100 +1068,473 @@ const TIPS: [string, string, string, string][] = [
   ["🎯", "Одно дело за раз", "Многозадачность мешает запоминанию. Убери телефон, когда учишь важное.", "Хорошие доказательства"],
 ];
 
-type Tab = "read" | "mem" | "poem" | "mind" | "info";
-const TABS: [Tab, string, string][] = [["read", "📖", "Скорочтение"], ["mem", "🧠", "Память"], ["poem", "📜", "Стихи"], ["mind", "🎯", "Внимание"], ["info", "🌱", "План"]];
+type Tab = "read" | "mem" | "poem" | "mind";
+
+type TabId = "home" | "read" | "mem" | "poem" | "mind" | "profile";
+type View = { kind: "tab" } | { kind: "ex"; id: string; plan: number; walk: boolean } | { kind: "result"; r: Result; plan: number; walk: boolean };
+type Unit = { id: TabId; name: string; icon: string; col: readonly [string, string]; items: Item[] };
+
+const UNITS: Unit[] = [
+  { id: "mem", name: "Память", icon: "🧠", col: PAL.green, items: MEM_ITEMS },
+  { id: "read", name: "Скорочтение", icon: "📖", col: PAL.blue, items: READ_ITEMS },
+  { id: "poem", name: "Стихи", icon: "📜", col: PAL.purple, items: POEMS.map((p: Poem, i: number) => ({ id: "poem:" + i, icon: "📜", name: p.t, short: p.a })) },
+  { id: "mind", name: "Внимание", icon: "🎯", col: PAL.orange, items: MIND_ITEMS },
+];
+const NAV: [TabId, string, string][] = [["home", "🏠", "Главная"], ["read", "📖", "Чтение"], ["mem", "🧠", "Память"], ["poem", "📜", "Стихи"], ["mind", "🎯", "Внимание"], ["profile", "👤", "Профиль"]];
+
+let toast: (s: string) => void = () => {};
+
+function Mascot(p: { size?: number; mood?: "happy" | "calm" | "wow"; cls?: string }) {
+  const s = p.size || 96;
+  const mood = p.mood || "calm";
+  return (
+    <svg className={p.cls || "mt-float"} width={s} height={s} viewBox="0 0 120 120" aria-hidden="true" style={{ flex: "0 0 auto", overflow: "visible" }}>
+      <ellipse cx="60" cy="112" rx="34" ry="5" fill="rgba(0,0,0,.12)" />
+      <path d="M60 14c-10-9-30-7-35 7-15 1-23 16-17 29-10 9-8 27 6 33 1 15 18 23 31 16 5 6 10 8 15 8s10-2 15-8c13 7 30-1 31-16 14-6 16-24 6-33 6-13-2-28-17-29-5-14-25-16-35-7z" fill="#FF8FB8" stroke="#E0558C" strokeWidth="4" strokeLinejoin="round" />
+      <path d="M60 18v20M38 30c6 2 9 7 9 13M82 30c-6 2-9 7-9 13M24 58c6-3 12-2 16 2M96 58c-6-3-12-2-16 2" fill="none" stroke="#E0558C" strokeWidth="3.5" strokeLinecap="round" />
+      <circle cx="45" cy="64" r="11" fill="#fff" /><circle cx="75" cy="64" r="11" fill="#fff" />
+      <circle cx={mood === "wow" ? 45 : 47} cy="65" r="6" fill="#1F2A37" /><circle cx={mood === "wow" ? 75 : 77} cy="65" r="6" fill="#1F2A37" />
+      <circle cx="49" cy="62" r="2" fill="#fff" /><circle cx="79" cy="62" r="2" fill="#fff" />
+      <circle cx="33" cy="78" r="5" fill="#FF5C93" opacity=".55" /><circle cx="87" cy="78" r="5" fill="#FF5C93" opacity=".55" />
+      {mood === "happy" ? <path d="M48 80q12 14 24 0z" fill="#B3264F" stroke="#B3264F" strokeWidth="3" strokeLinejoin="round" /> : mood === "wow" ? <ellipse cx="60" cy="84" rx="6" ry="7" fill="#B3264F" /> : <path d="M50 81q10 8 20 0" fill="none" stroke="#B3264F" strokeWidth="4" strokeLinecap="round" />}
+    </svg>
+  );
+}
+
+function Btn3D(p: { label: ReactNode; onClick: () => void; col?: readonly [string, string]; light?: boolean; full?: boolean; big?: boolean; disabled?: boolean }) {
+  const { t } = useS();
+  const col = p.col || PAL.green;
+  const bg = p.light ? t.bg.elevated : col[0];
+  const edge = p.light ? t.border.default : col[1];
+  return (
+    <button className="mt-3d" disabled={p.disabled} onClick={() => { buzz(10); play("tap"); p.onClick(); }}
+      style={{ width: p.full ? "100%" : undefined, minHeight: p.big ? 56 : 46, padding: "0 22px", borderRadius: 16, border: p.light ? `2px solid ${edge}` : "none", background: bg, color: p.light ? (col === PAL.green ? t.text.primary : col[1]) : "#fff", boxShadow: `0 4px 0 ${edge}`, fontFamily: t.font.family, fontSize: p.big ? 18 : 16, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", cursor: p.disabled ? "default" : "pointer", opacity: p.disabled ? 0.5 : 1 }}>{p.label}</button>
+  );
+}
+
+function Ring(p: { value: number; size: number; col: string; children?: ReactNode }) {
+  const { t } = useS();
+  const r = p.size / 2 - 7, C = 2 * Math.PI * r, v = Math.max(0, Math.min(1, p.value));
+  return (
+    <div style={{ position: "relative", width: p.size, height: p.size, flex: "0 0 auto" }}>
+      <svg width={p.size} height={p.size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={p.size / 2} cy={p.size / 2} r={r} fill="none" stroke={t.bg.subtle} strokeWidth="10" />
+        <circle cx={p.size / 2} cy={p.size / 2} r={r} fill="none" stroke={p.col} strokeWidth="10" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - v)} style={{ transition: "stroke-dashoffset 1s cubic-bezier(.2,.9,.3,1)" }} />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>{p.children}</div>
+    </div>
+  );
+}
+
+function Stars(p: { n: number; size?: number; anim?: boolean }) {
+  return (
+    <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+      {[0, 1, 2].map((k: number) => <span key={k} className={p.anim && k < p.n ? "mt-starpop" : ""} style={{ fontSize: p.size || 14, filter: k < p.n ? "none" : "grayscale(1)", opacity: k < p.n ? 1 : 0.3, animationDelay: `${0.3 + k * 0.25}s` }}>⭐</span>)}
+    </div>
+  );
+}
+
+function Toast() {
+  const [m, setM] = useState("");
+  const [k, setK] = useState(0);
+  useEffect(() => { toast = (s: string) => { setM(s); setK((x: number) => x + 1); }; }, []);
+  useEffect(() => { if (!m) return; const id = setTimeout(() => setM(""), 2200); return () => clearTimeout(id); }, [k]);
+  if (!m) return null;
+  return <div key={k} className="mt-toast" style={{ position: "fixed", left: "50%", top: "calc(env(safe-area-inset-top) + 70px)", transform: "translateX(-50%)", zIndex: 80, background: "#1F2A37", color: "#fff", padding: "12px 18px", borderRadius: 16, fontWeight: 700, fontSize: 15, boxShadow: "0 8px 24px rgba(0,0,0,.25)", maxWidth: "86vw", textAlign: "center" }}>{m}</div>;
+}
+
+function useGame() {
+  const [xp] = usePersist<number>("xp", 0);
+  const [dayXp] = usePersist<number>("xpday:" + today(), 0);
+  const [stars] = usePersist<Record<string, number>>("stars", {});
+  const [poems] = usePersist<string[]>("poems", []);
+  const [done] = usePersist<number[]>("plan:" + today(), []);
+  const [mute, setMute] = usePersist<boolean>("mute", false);
+  const streak = useStreak();
+  const level = levelOf(xp);
+  const starOf = (id: string) => id.startsWith("poem:") ? (poems.includes(POEMS[Number(id.slice(5))].t) ? 3 : stars[id] || 0) : stars[id] || 0;
+  return { xp, dayXp, stars, poems, done, mute, setMute, streak, level, starOf };
+}
+
+function TopBar(p: { onProfile: () => void }) {
+  const { t } = useS();
+  const g = useGame();
+  const chip = (icon: string, val: ReactNode, col: string, k: string) => (
+    <div key={k} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 900, fontSize: 17, color: col }}><span key={String(val)} className="mt-pop" style={{ fontSize: 22 }}>{icon}</span>{val}</div>
+  );
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 40, background: t.bg.base, borderBottom: `2px solid ${t.border.subtle}`, paddingTop: "env(safe-area-inset-top)" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", height: 56, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button onClick={p.onProfile} className="mt-press" style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: t.font.family }}>
+          <div style={{ width: 34, height: 34, borderRadius: 12, background: PAL.purple[0], boxShadow: `0 3px 0 ${PAL.purple[1]}`, color: "#fff", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>{g.level}</div>
+          <span style={{ fontWeight: 800, fontSize: 13, color: t.text.secondary }}>ур.</span>
+        </button>
+        {chip("🔥", g.streak, g.streak ? PAL.orange[0] : t.text.tertiary, "s")}
+        {chip("💎", g.xp, PAL.blue[0], "x")}
+        <button aria-label="Звук" onClick={() => { g.setMute(!g.mute); if (g.mute) play("tap"); }} className="mt-press" style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", padding: 4 }}>{g.mute ? "🔇" : "🔊"}</button>
+      </div>
+    </div>
+  );
+}
+
+function BottomNav(p: { tab: TabId; onTab: (x: TabId) => void }) {
+  const { t } = useS();
+  return (
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 40, background: t.bg.base, borderTop: `2px solid ${t.border.subtle}`, paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", padding: "6px 4px" }}>
+        {NAV.map(([id, ic, nm]: [TabId, string, string]) => {
+          const on = id === p.tab;
+          return (
+            <button key={id} onClick={() => { if (!on) { buzz(8); play("tap"); } p.onTab(id); }} style={{ flex: 1, minWidth: 0, background: on ? t.fill.accentSubtle : "transparent", border: `2px solid ${on ? PAL.blue[0] : "transparent"}`, borderRadius: 14, padding: "5px 0 3px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, fontFamily: t.font.family }}>
+              <span className={on ? "mt-bounce" : ""} style={{ fontSize: 24, lineHeight: "28px", filter: on ? "none" : "saturate(.6)" }}>{ic}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: on ? PAL.blue[1] : t.text.tertiary, whiteSpace: "nowrap" }}>{nm}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PathUnit(p: { u: Unit; onOpen: (id: string) => void }) {
+  const { t } = useS();
+  const g = useGame();
+  const st = p.u.items.map((x: Item) => g.starOf(x.id));
+  const cur = st.findIndex((s: number) => s === 0);
+  const total = st.reduce((a: number, b: number) => a + b, 0);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ background: p.u.col[0], boxShadow: `0 5px 0 ${p.u.col[1]}`, borderRadius: 20, padding: "16px 18px", color: "#fff", display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ fontSize: 38 }}>{p.u.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, opacity: 0.85, textTransform: "uppercase" }}>Раздел</div>
+          <div style={{ fontSize: 22, fontWeight: 900 }}>{p.u.name}</div>
+        </div>
+        <div style={{ fontWeight: 900, fontSize: 15, background: "rgba(255,255,255,.22)", borderRadius: 12, padding: "6px 10px" }}>⭐ {total}/{st.length * 3}</div>
+      </div>
+      <div style={{ position: "relative", padding: "18px 0 8px" }}>
+        {p.u.items.map((x: Item, k: number) => {
+          const locked = k > 0 && st[k - 1] === 0 && st[k] === 0;
+          const isCur = k === cur;
+          const dx = Math.round(Math.sin(k * 1.1) * 72);
+          const bg = locked ? t.bg.subtle : p.u.col[0];
+          const edge = locked ? t.border.default : p.u.col[1];
+          return (
+            <div key={x.id} style={{ transform: `translateX(${dx}px)`, marginBottom: 14 }}><div className="mt-fade" style={{ animationDelay: `${k * 50}ms`, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+              {isCur ? <div className="mt-bob" style={{ background: t.bg.elevated, border: `2px solid ${t.border.default}`, color: p.u.col[1], fontWeight: 900, fontSize: 13, letterSpacing: 0.6, padding: "5px 12px", borderRadius: 12, marginBottom: 8 }}>НАЧАТЬ</div> : null}
+              <button className={"mt-node" + (isCur ? " mt-pulse" : "")} aria-label={x.name} onClick={() => {
+                if (locked) { buzz([30, 40, 30]); play("bad"); toast("🔒 Сначала пройди предыдущий урок"); return; }
+                p.onOpen(x.id);
+              }} style={{ width: 76, height: 70, borderRadius: "50%", border: "none", background: bg, boxShadow: `0 7px 0 ${edge}`, fontSize: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", ["--c" as string]: p.u.col[0] } as CSSProperties}>
+                <span style={{ filter: locked ? "grayscale(1)" : "none", opacity: locked ? 0.5 : 1 }}>{locked ? "🔒" : st[k] >= 3 ? "👑" : x.icon}</span>
+              </button>
+              <div style={{ marginTop: 10, maxWidth: 150, textAlign: "center", fontSize: 13, fontWeight: 800, color: locked ? t.text.tertiary : t.text.primary, lineHeight: "16px" }}>{x.name}</div>
+              {st[k] > 0 ? <Stars n={st[k]} size={13} /> : null}
+            </div></div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DailyTasks(p: { onGo: (i: number, walk: boolean) => void }) {
+  const { t, card } = useS();
+  const g = useGame();
+  const n = g.done.length;
+  return (
+    <div style={{ ...card, gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ fontSize: 20, fontWeight: 900 }}>📋 Задания дня</div>
+        <div style={{ fontWeight: 900, color: n >= PLAN.length ? PAL.green[1] : t.text.secondary }}>{n}/{PLAN.length}</div>
+      </div>
+      <Prog value={n / PLAN.length} />
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {PLAN.map(([m, ic, nm, d]: [string, string, string, string], i: number) => {
+          const ok = g.done.includes(i);
+          return (
+            <button key={i} className="mt-plan" onClick={() => p.onGo(i, false)} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 0", background: "none", border: "none", borderTop: i ? `2px solid ${t.border.subtle}` : "none", cursor: "pointer", textAlign: "left", fontFamily: t.font.family, color: t.text.primary }}>
+              <div style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 14, background: ok ? PAL.green[0] : t.bg.subtle, boxShadow: ok ? `0 3px 0 ${PAL.green[1]}` : `0 3px 0 ${t.border.default}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff", fontWeight: 900 }}>{ok ? "✓" : ic}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, textDecoration: ok ? "line-through" : "none", opacity: ok ? 0.6 : 1 }}>{nm}</div>
+                <div style={{ fontSize: 13, color: t.text.secondary }}>{m} · {d}</div>
+              </div>
+              <span className="mt-go" style={{ fontWeight: 900, color: PAL.blue[0], fontSize: 13 }}>Начать →</span>
+            </button>
+          );
+        })}
+      </div>
+      <Btn3D full big label={n >= PLAN.length ? "🎉 Всё выполнено! Ещё раз" : n ? "▶ Продолжить план" : "▶ Начать план"} onClick={() => { const k = PLAN.findIndex((_: unknown, i: number) => !g.done.includes(i)); p.onGo(k < 0 ? 0 : k, true); }} />
+    </div>
+  );
+}
+
+function greet() { const h = new Date().getHours(); return h < 5 ? "Доброй ночи!" : h < 12 ? "Доброе утро!" : h < 18 ? "Добрый день!" : "Добрый вечер!"; }
+
+function Home(p: { onGo: (i: number, walk: boolean) => void; onOpen: (id: string) => void }) {
+  const { t, card } = useS();
+  const g = useGame();
+  const goalOk = g.dayXp >= DAILY_GOAL;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ ...card, flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <Mascot size={84} mood={goalOk ? "happy" : "calm"} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 20, fontWeight: 900 }}>{greet()}</div>
+          <div style={{ fontSize: 14, color: t.text.secondary, lineHeight: "19px" }}>{goalOk ? "Цель дня выполнена — так держать! 🎉" : g.streak ? `Серия ${g.streak} дн. Не прерывай её!` : "Начнём тренировку? 15 минут в день — и прогресс заметен."}</div>
+        </div>
+        <Ring value={g.dayXp / DAILY_GOAL} size={78} col={goalOk ? PAL.green[0] : PAL.yellow[0]}>
+          <span style={{ fontSize: 18, fontWeight: 900, lineHeight: "20px" }}>{Math.min(g.dayXp, 999)}</span>
+          <span style={{ fontSize: 10, fontWeight: 800, color: t.text.tertiary }}>из {DAILY_GOAL} XP</span>
+        </Ring>
+      </div>
+      <DailyTasks onGo={p.onGo} />
+      {UNITS.map((u: Unit) => <PathUnit key={u.id} u={u} onOpen={p.onOpen} />)}
+    </div>
+  );
+}
+
+function UnitTab(p: { u: Unit; onOpen: (id: string) => void }) {
+  const { t } = useS();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <PathUnit u={p.u} onOpen={p.onOpen} />
+      <div style={{ textAlign: "center", fontSize: 13, color: t.text.tertiary, fontWeight: 700 }}>Пройденные уроки можно повторять — звёзды обновятся по лучшему результату.</div>
+    </div>
+  );
+}
+
+const BEST_ROWS: [string, string, (v: number) => string][] = [
+  ["best:Schulte", "🔢 Таблица Шульте", (v: number) => `${v.toFixed(1)} с`],
+  ["best:NumberGame", "🔟 Запомни число", (v: number) => `${v} цифр`],
+  ["best:Simon", "✨ Последовательность", (v: number) => `${v} шагов`],
+  ["best:WordsGame", "📝 Запомни слова", (v: number) => `${v} слов`],
+  ["best:MathGame", "➗ Счёт в уме", (v: number) => `${v} примеров`],
+];
+
+function Profile() {
+  const { t, card, muted } = useS();
+  const g = useGame();
+  const [ach] = usePersist<string[]>("ach", []);
+  const [maxes] = usePersist<Record<string, number>>("maxes", {});
+  const [sessions] = usePersist<number>("sessions", 0);
+  const [streakRaw] = usePersist<{ last: string; count: number; total: number }>("streak", { last: "", count: 0, total: 0 });
+  const [confirm, setConfirm] = useState(false);
+  const [tips, setTips] = useState(false);
+  const lo = xpFor(g.level), hi = xpFor(g.level + 1);
+  const tile = (ic: string, v: ReactNode, l: string, col: string) => (
+    <div style={{ flex: "1 1 40%", boxSizing: "border-box", minWidth: 0, border: `2px solid ${t.border.subtle}`, borderRadius: 18, padding: "12px 14px", display: "flex", gap: 10, alignItems: "center" }}>
+      <span style={{ fontSize: 26 }}>{ic}</span>
+      <div><div style={{ fontSize: 20, fontWeight: 900, color: col }}>{v}</div><div style={{ fontSize: 12, fontWeight: 700, color: t.text.tertiary }}>{l}</div></div>
+    </div>
+  );
+  const h2 = (s: string) => <div style={{ fontSize: 20, fontWeight: 900, margin: "6px 2px 0" }}>{s}</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ ...card, alignItems: "center", textAlign: "center", gap: 8 }}>
+        <Mascot size={100} mood="happy" />
+        <div style={{ fontSize: 26, fontWeight: 900 }}>Уровень {g.level}</div>
+        <div style={{ width: "100%" }}><Prog value={g.level >= MAX_LEVEL ? 1 : (g.xp - lo) / (hi - lo)} /></div>
+        <div style={muted}>{g.level >= MAX_LEVEL ? "Максимальный уровень!" : `${g.xp - lo} / ${hi - lo} XP до уровня ${g.level + 1}`}</div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        {tile("🔥", g.streak, "дней подряд", PAL.orange[0])}
+        {tile("💎", g.xp, "всего XP", PAL.blue[0])}
+        {tile("📅", streakRaw.total, "дней занятий", PAL.purple[0])}
+        {tile("✅", sessions, "упражнений", PAL.green[0])}
+      </div>
+      {h2("🏆 Рекорды")}
+      <div style={{ ...card, gap: 0, padding: "4px 18px" }}>
+        {BEST_ROWS.map(([k, nm, f]: [string, string, (v: number) => string], i: number) => { const v = read<number>(k, 0); return <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderTop: i ? `2px solid ${t.border.subtle}` : "none", fontWeight: 700 }}><span>{nm}</span><span style={{ color: v ? t.text.primary : t.text.tertiary }}>{v ? f(v) : "—"}</span></div>; })}
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderTop: `2px solid ${t.border.subtle}`, fontWeight: 700 }}><span>⚡ Быстрый показ</span><span>{maxes.wpm ? `${maxes.wpm} слов/мин` : "—"}</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderTop: `2px solid ${t.border.subtle}`, fontWeight: 700 }}><span>🧠 N-назад</span><span>{maxes.nback ? `уровень ${maxes.nback}` : "—"}</span></div>
+      </div>
+      {h2(`📜 Выученные стихи · ${g.poems.filter((x: string) => POEMS.some((q: Poem) => q.t === x)).length}/${POEMS.length}`)}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {POEMS.map((q: Poem) => { const ok = g.poems.includes(q.t); return <div key={q.t} style={{ padding: "8px 12px", borderRadius: 14, border: `2px solid ${ok ? PAL.purple[0] : t.border.subtle}`, background: ok ? t.bg.elevated : "transparent", color: ok ? t.text.primary : t.text.tertiary, fontSize: 13, fontWeight: 800 }}>{ok ? "✓ " : ""}{q.t}</div>; })}
+      </div>
+      {h2(`🎖️ Достижения · ${ach.length}/${ACHS.length}`)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        {ACHS.map((a: Ach) => { const ok = ach.includes(a.id); return (
+          <div key={a.id} style={{ border: `2px solid ${ok ? PAL.yellow[0] : t.border.subtle}`, boxShadow: ok ? `0 4px 0 ${PAL.yellow[1]}` : "none", background: t.bg.elevated, borderRadius: 18, padding: "12px 6px", textAlign: "center", display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+            <span style={{ fontSize: 32, filter: ok ? "none" : "grayscale(1)", opacity: ok ? 1 : 0.35 }}>{a.icon}</span>
+            <span style={{ fontSize: 12, fontWeight: 900, lineHeight: "14px", color: ok ? t.text.primary : t.text.tertiary }}>{a.name}</span>
+            <span style={{ fontSize: 10.5, lineHeight: "13px", color: t.text.tertiary }}>{a.desc}</span>
+          </div>); })}
+      </div>
+      {h2("⚙️ Настройки")}
+      <div style={{ ...card, gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontWeight: 800 }}>{g.mute ? "🔇" : "🔊"} Звуки</span>
+          <button onClick={() => { g.setMute(!g.mute); buzz(10); }} aria-label="Звуки" style={{ width: 58, height: 34, borderRadius: 99, border: "none", background: g.mute ? t.border.default : PAL.green[0], position: "relative", cursor: "pointer", transition: "background .2s" }}>
+            <span style={{ position: "absolute", top: 4, left: g.mute ? 4 : 28, width: 26, height: 26, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 2px 4px rgba(0,0,0,.2)" }} />
+          </button>
+        </div>
+        <Btn3D light full label={tips ? "Скрыть советы" : "💡 Что говорит наука"} col={PAL.blue} onClick={() => setTips(!tips)} />
+        {tips ? <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{TIPS.map(([ic, ttl, d, ev]: [string, string, string, string]) => (
+          <div key={ttl} className="mt-fade" style={{ border: `2px solid ${t.border.subtle}`, borderRadius: 16, padding: 12 }}>
+            <div style={{ fontWeight: 900 }}>{ic} {ttl}</div><div style={{ fontSize: 14, color: t.text.secondary, lineHeight: "20px" }}>{d}</div><div style={{ fontSize: 12, color: t.text.tertiary, fontWeight: 700, marginTop: 4 }}>{ev}</div>
+          </div>))}</div> : null}
+        {!confirm ? <Btn3D light full label="Сбросить прогресс" col={PAL.red} onClick={() => setConfirm(true)} /> : (
+          <div className="mt-shake" style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 16, background: t.fill.dangerSubtle }}>
+            <div style={{ fontWeight: 800, color: t.text.danger }}>Точно сбросить? Удалятся XP, уровень, серия, рекорды, стихи и достижения. Отменить будет нельзя.</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn3D label="Да, сбросить" col={PAL.red} onClick={() => { Object.keys(localStorage).filter((k: string) => k.startsWith("rm:")).forEach((k: string) => localStorage.removeItem(k)); localStorage.setItem("rm:migrated2", "true"); window.location.reload(); }} />
+              <Btn3D light label="Отмена" onClick={() => setConfirm(false)} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function itemOf(id: string): Item {
+  if (id.startsWith("poem")) return { id, icon: "📜", name: "Стихи наизусть", short: "" };
+  return READ_ITEMS.concat(MEM_ITEMS, MIND_ITEMS).find((x: Item) => x.id === id) || READ_ITEMS[0];
+}
+function descOf(id: string) { return id.startsWith("poem") ? "Пять шагов: читаем, первые буквы, пропуски, по строкам, проверка. Учи одно стихотворение несколько дней." : DESC[id]; }
+function renderEx(id: string, learned: string[]): ReactNode {
+  if (id.startsWith("poem")) {
+    const i = id.startsWith("poem:") ? Number(id.slice(5)) : Math.max(0, POEMS.findIndex((p: Poem) => !learned.includes(p.t)));
+    return <PoemTrainer initial={i} />;
+  }
+  switch (id) {
+    case "rsvp": return <Rsvp />; case "schulte": return <Schulte />; case "periph": return <Periph />; case "test": return <ReadTest />;
+    case "pairs": return <Pairs />; case "number": return <NumberGame />; case "simon": return <Simon />; case "words": return <WordsGame />;
+    case "change": return <Change />; case "nback": return <NBack />; case "faces": return <FacesGame />; case "loci": return <Loci />;
+    case "stroop": return <Stroop />; case "math": return <MathGame />; default: return <Reaction />;
+  }
+}
+function planIdxFor(id: string): number[] {
+  return PLAN_GO.map(([, pid]: [Tab, string], i: number) => (pid === id || (pid === "poem" && id.startsWith("poem")) || (pid === "pairs" && id === "faces") ? i : -1)).filter((i: number) => i >= 0);
+}
+
+function ExScreen(p: { id: string; plan: number; walk: boolean; onClose: () => void; onDone: () => void }) {
+  const { t } = useS();
+  const g = useGame();
+  const it = itemOf(p.id);
+  const [wig, setWig] = useState(0);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button aria-label="Закрыть" onClick={p.onClose} className="mt-press" style={{ width: 40, height: 40, borderRadius: 12, border: "none", background: "transparent", fontSize: 26, color: t.text.tertiary, cursor: "pointer", fontWeight: 900 }}>✕</button>
+        <div style={{ flex: 1 }}>{p.plan >= 0 ? <div style={{ fontSize: 13, fontWeight: 900, color: PAL.blue[1] }}>📋 {p.walk ? `Задание ${p.plan + 1} из ${PLAN.length}` : "Задание дня"} · {PLAN[p.plan][0]}</div> : null}<div style={{ fontSize: 13, fontWeight: 800, color: t.text.tertiary }}>{p.plan >= 0 ? PLAN[p.plan][3] : "Тренировка"}</div></div>
+      </div>
+      <div onPointerDown={() => { session.presses++; }}>
+        <GameCard item={it} desc={descOf(p.id)}>{renderEx(p.id, g.poems)}</GameCard>
+      </div>
+      <div style={{ height: 90 }} />
+      {createPortal(<div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: t.bg.base, borderTop: `2px solid ${t.border.subtle}`, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))" }}>
+        <div key={wig} className={wig ? "mt-shake" : ""} style={{ maxWidth: 640, margin: "0 auto" }}>
+          <Btn3D full big label="Завершить ✓" onClick={() => {
+            if (session.presses < 2 && session.good + session.bad === 0) { setWig(wig + 1); toast("Сначала попробуй упражнение 🙂"); return; }
+            p.onDone();
+          }} />
+        </div>
+      </div>, document.body)}
+    </div>
+  );
+}
+
+function ResultScreen(p: { r: Result; next: string; onNext: () => void }) {
+  const { t, card } = useS();
+  const g = useGame();
+  const r = p.r;
+  useEffect(() => { play("win"); buzz([20, 60, 20]); if (r.stars >= 3 || r.goalNow) fireConfetti(); const id = setTimeout(() => play("xp"), 700); return () => clearTimeout(id); }, []);
+  const title = r.stars >= 3 ? "Великолепно!" : r.stars === 2 ? "Отличная работа!" : "Хорошее начало!";
+  const tile = (l: string, v: ReactNode, col: readonly [string, string], d: number) => (
+    <div className="mt-pop" style={{ animationDelay: `${d}ms`, flex: 1, borderRadius: 18, border: `2px solid ${col[0]}`, overflow: "hidden", textAlign: "center" }}>
+      <div style={{ background: col[0], color: "#fff", fontSize: 11.5, fontWeight: 900, padding: "5px 0", letterSpacing: 0.6, textTransform: "uppercase" }}>{l}</div>
+      <div style={{ padding: "12px 4px", fontSize: 22, fontWeight: 900, color: col[1], background: t.bg.elevated }}>{v}</div>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center", textAlign: "center", paddingTop: 10, position: "relative" }}>
+      <div style={{ position: "relative" }}>
+        <Mascot size={140} mood="happy" cls="mt-jump" />
+        <div className="mt-fly" style={{ position: "absolute", left: "50%", top: 10, fontSize: 26, fontWeight: 900, color: PAL.yellow[1], whiteSpace: "nowrap" }}>+{r.xp} XP</div>
+      </div>
+      <div className="mt-pop" style={{ fontSize: 30, fontWeight: 900, color: PAL.green[1] }}>{title}</div>
+      <Stars n={r.stars} size={40} anim />
+      <div style={{ display: "flex", gap: 10, width: "100%" }}>
+        {tile("Опыт", `+${r.xp}`, PAL.yellow, 200)}
+        {tile("Точность", r.acc === null ? "—" : `${Math.round(r.acc * 100)}%`, PAL.green, 350)}
+        {tile("Цель дня", `${Math.min(g.dayXp, DAILY_GOAL)}/${DAILY_GOAL}`, PAL.blue, 500)}
+      </div>
+      {r.goalNow ? <div className="mt-pop" style={{ ...card, width: "100%", boxSizing: "border-box", flexDirection: "row", alignItems: "center", gap: 10, borderColor: PAL.green[0] }}><span style={{ fontSize: 30 }}>🎯</span><span style={{ fontWeight: 900 }}>Цель дня выполнена!</span></div> : null}
+      {r.achs.map((a: Ach, i: number) => (
+        <div key={a.id} className="mt-pop" style={{ ...card, animationDelay: `${700 + i * 200}ms`, width: "100%", boxSizing: "border-box", flexDirection: "row", alignItems: "center", gap: 12, borderColor: PAL.yellow[0], boxShadow: `0 4px 0 ${PAL.yellow[1]}`, textAlign: "left" }}>
+          <span className="mt-wiggle" style={{ fontSize: 36 }}>{a.icon}</span>
+          <div><div style={{ fontSize: 12, fontWeight: 900, color: PAL.yellow[1], textTransform: "uppercase" }}>Новое достижение</div><div style={{ fontWeight: 900 }}>{a.name}</div><div style={{ fontSize: 13, color: t.text.secondary }}>{a.desc}</div></div>
+        </div>
+      ))}
+      <div style={{ height: 90 }} />
+      {createPortal(<div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: t.bg.base, borderTop: `2px solid ${t.border.subtle}`, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))" }}>
+        <div style={{ maxWidth: 640, margin: "0 auto" }}><Btn3D full big label={p.next} onClick={p.onNext} /></div>
+      </div>, document.body)}
+    </div>
+  );
+}
+
+function LevelUp(p: { level: number; onClose: () => void }) {
+  useEffect(() => { play("level"); buzz([30, 50, 30, 50, 80]); fireConfetti(); }, []);
+  return (
+    <div className="mt-fadein" style={{ position: "fixed", inset: 0, zIndex: 60, background: `linear-gradient(160deg, ${PAL.purple[0]}, ${PAL.blue[0]})`, color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, padding: "env(safe-area-inset-top) 24px env(safe-area-inset-bottom)", textAlign: "center" }}>
+      <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 2, opacity: 0.9 }}>НОВЫЙ УРОВЕНЬ!</div>
+      <div className="mt-levelbadge" style={{ width: 150, height: 150, borderRadius: "50%", background: PAL.yellow[0], boxShadow: `0 10px 0 ${PAL.yellow[1]}, 0 0 0 10px rgba(255,255,255,.25)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 72, fontWeight: 900, color: "#7A4A00" }}>{p.level}</div>
+      <Mascot size={110} mood="wow" cls="mt-jump" />
+      <div style={{ fontSize: 18, fontWeight: 800, maxWidth: 320, lineHeight: "24px" }}>Мозг прокачан до уровня {p.level}. Продолжай в том же духе!</div>
+      <div style={{ width: "100%", maxWidth: 360 }}><Btn3D full big light col={PAL.purple} label="Ура! Дальше" onClick={p.onClose} /></div>
+    </div>
+  );
+}
 
 export default function App() {
-  const { t, c, card, grad, shadow } = useS();
-  const [tab, setTab] = useState<Tab>("mem");
-  const streak = useStreak();
-  const [learnedAll] = usePersist<string[]>("poems", []);
-  const top = useRef<HTMLDivElement>(null);
-  const [sel, setSel] = useState("");
-  const [cur, setCur] = useState(-1);
-  const [walk, setWalk] = useState(false);
-  const [done, setDone] = usePersist<number[]>("plan:" + new Date().toDateString(), []);
-  const toTop = () => { setTimeout(() => { if (top.current) top.current.scrollIntoView({ behavior: "smooth", block: "start" }); }, 30); };
-  const pick = (x: Tab) => { setTab(x); setSel(""); setCur(-1); setWalk(false); toTop(); };
-  const go = (i: number, w: boolean) => { const [tb, id] = PLAN_GO[i]; setTab(tb); setSel(id); setCur(i); setWalk(w); toTop(); };
-  const finish = () => { const nd = done.includes(cur) ? done : done.concat(cur); setDone(nd); if (walk && cur < PLAN.length - 1) { go(cur + 1, true); } else { if (nd.length >= PLAN.length) fireConfetti(); setTab("info"); setSel(""); setCur(-1); setWalk(false); toTop(); } };
+  const { t } = useS();
+  const [tab, setTab] = useState<TabId>("home");
+  const [view, setView] = useState<View>({ kind: "tab" });
+  const [lvl, setLvl] = useState<number | null>(null);
+  const g = useGame();
+  useEffect(() => { migrate(); checkAchs(PLAN.length); }, []);
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [tab, view]);
+  const openEx = (id: string, plan: number, walk: boolean) => { resetSession(); setView({ kind: "ex", id, plan, walk }); };
+  const goPlan = (i: number, walk: boolean) => openEx(PLAN_GO[i][1], i, walk);
+  const finish = (id: string, plan: number, walk: boolean) => {
+    const idx = planIdxFor(id); if (plan >= 0 && !idx.includes(plan)) idx.push(plan);
+    const r = complete(id, PLAN.length, idx);
+    setView({ kind: "result", r, plan, walk });
+  };
+  const after = (plan: number, walk: boolean) => {
+    if (walk && plan >= 0) {
+      const done = read<number[]>("plan:" + today(), []);
+      const nx = PLAN.findIndex((_: unknown, i: number) => i > plan && !done.includes(i));
+      if (nx >= 0) { goPlan(nx, true); return; }
+    }
+    setView({ kind: "tab" });
+  };
+  const vkey = view.kind === "tab" ? "tab-" + tab : view.kind === "ex" ? "ex-" + view.id + view.plan : "res";
+  const unit = UNITS.find((u: Unit) => u.id === tab);
+  const inTab = view.kind === "tab";
   return (
-    <div style={{ fontFamily: t.font.family, color: t.text.primary, background: t.bg.base, minHeight: "100%", padding: "16px 14px 48px", boxSizing: "border-box" }}>
+    <div style={{ fontFamily: t.font.family, color: t.text.primary, background: t.bg.base, minHeight: "100vh" }}>
       <style>{CSS}</style>
       <Confetti />
-      <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
-        <div style={{ position: "relative", overflow: "hidden", borderRadius: 28, padding: "28px 22px", background: grad, boxShadow: shadow }}>
-          <div style={{ position: "absolute", width: 240, height: 240, right: -70, top: -90, borderRadius: "50%", background: c[1], filter: "blur(60px)", animation: "mtGlow 6s ease-in-out infinite" }} />
-          <div style={{ position: "absolute", width: 180, height: 180, left: -60, bottom: -90, borderRadius: "50%", background: c[2], filter: "blur(50px)", animation: "mtGlow 8s ease-in-out infinite" }} />
-          <div style={{ position: "relative", color: t.text.onColor }}>
-            <div style={{ fontSize: 13, letterSpacing: 1.5, textTransform: "uppercase", opacity: 0.85 }}>Твоя ежедневная тренировка</div>
-            <div style={{ fontSize: "clamp(32px, 9vw, 46px)", fontWeight: 750, letterSpacing: -1, lineHeight: 1.05, margin: "6px 0 10px" }}>Развитие мозга</div>
-            <div style={{ fontSize: 16, lineHeight: "23px", opacity: 0.93 }}>Скорочтение, память, стихи и внимание — 18 упражнений. 15 минут в день, и уровни будут расти вместе с тобой.</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}><span style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(255,255,255,.2)", fontSize: 14, fontWeight: 600 }}>🔥 Серия: {streak} дн.</span><span style={{ padding: "6px 12px", borderRadius: 999, background: "rgba(255,255,255,.2)", fontSize: 14, fontWeight: 600 }}>📜 Выучено стихов: {learnedAll.filter((x: string) => POEMS.some((q: Poem) => q.t === x)).length}/{POEMS.length}</span></div>
-          </div>
+      <Toast />
+      {inTab ? <TopBar onProfile={() => setTab("profile")} /> : null}
+      <div style={{ maxWidth: 640, margin: "0 auto", boxSizing: "border-box", padding: inTab ? "calc(env(safe-area-inset-top) + 74px) 16px calc(env(safe-area-inset-bottom) + 96px)" : "calc(env(safe-area-inset-top) + 12px) 16px 24px" }}>
+        <div key={vkey} className="mt-slide">
+          {view.kind === "ex" ? <ExScreen id={view.id} plan={view.plan} walk={view.walk} onClose={() => setView({ kind: "tab" })} onDone={() => finish(view.id, view.plan, view.walk)} /> : null}
+          {view.kind === "result" ? (() => { const v = view; const done = read<number[]>("plan:" + today(), []); const more = v.walk && PLAN.some((_: unknown, i: number) => i > v.plan && !done.includes(i));
+            return <ResultScreen r={v.r} next={more ? "Следующее задание →" : "Продолжить"} onNext={() => { if (v.r.levelUp) setLvl(v.r.levelUp); after(v.plan, v.walk); }} />; })() : null}
+          {inTab && tab === "home" ? <Home onGo={goPlan} onOpen={(id: string) => openEx(id, -1, false)} /> : null}
+          {inTab && unit ? <UnitTab u={unit} onOpen={(id: string) => openEx(id, -1, false)} /> : null}
+          {inTab && tab === "profile" ? <Profile /> : null}
         </div>
-
-        <div ref={top} style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: 6, borderRadius: 22, background: t.bg.subtle }}>
-          {TABS.map(([id, ic, nm]: [Tab, string, string]) => {
-            const on = id === tab;
-            return (
-              <button key={id} className="mt-press" onClick={() => pick(id)} style={{ flex: "1 1 90px", minHeight: 52, borderRadius: 16, border: "none", background: on ? t.bg.elevated : "transparent", boxShadow: on ? shadow : "none", color: on ? t.text.primary : t.text.secondary, fontFamily: t.font.family, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2 }}>
-                <span style={{ fontSize: 20, transform: on ? "scale(1.15)" : "none", transition: "transform .2s" }}>{ic}</span>{nm}
-              </button>
-            );
-          })}
-        </div>
-
-        <div key={`${tab}-${sel}-${cur}`} className="mt-fade" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {cur >= 0 && tab !== "info" ? (
-            <div style={{ ...card, padding: 14, gap: 10, background: t.fill.accentSubtle, border: `1px solid ${c[0]}` }}>
-              <div style={{ fontSize: 13, color: t.text.accent, fontWeight: 600 }}>📋 {walk ? `План · задание ${cur + 1} из ${PLAN.length}` : "Задание из плана"} · {PLAN[cur][0]}</div>
-              <div style={{ fontSize: 17, fontWeight: 650 }}>{PLAN[cur][1]} {PLAN[cur][2]} — <span style={{ fontWeight: 400, color: t.text.secondary }}>{PLAN[cur][3]}</span></div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <Btn primary label={walk && cur < PLAN.length - 1 ? "Следующее задание →" : walk ? "Завершить план ✓" : "Готово ✓"} onClick={finish} />
-                <Btn label="← К плану" onClick={() => pick("info")} />
-              </div>
-            </div>
-          ) : null}
-          {tab === "read" ? <Sub initial={sel} items={READ_ITEMS} render={(id: string) => id === "rsvp" ? <Rsvp /> : id === "schulte" ? <Schulte /> : id === "periph" ? <Periph /> : <ReadTest />} /> : null}
-          {tab === "mem" ? <Sub initial={sel} items={MEM_ITEMS} render={(id: string) => id === "pairs" ? <Pairs /> : id === "number" ? <NumberGame /> : id === "simon" ? <Simon /> : id === "words" ? <WordsGame /> : id === "change" ? <Change /> : id === "nback" ? <NBack /> : id === "faces" ? <FacesGame /> : <Loci />} /> : null}
-          {tab === "poem" ? <GameCard item={{ id: "poem", icon: "📜", name: "Стихи наизусть", short: "" }} desc="Пять шагов: читаем, первые буквы, пропуски, по строкам, проверка. Учи одно стихотворение несколько дней."><PoemTrainer /></GameCard> : null}
-          {tab === "mind" ? <Sub initial={sel} items={MIND_ITEMS} render={(id: string) => id === "stroop" ? <Stroop /> : id === "math" ? <MathGame /> : <Reaction />} /> : null}
-          {tab === "info" ? (
-            <Fragment0>
-              <div style={{ fontSize: 22, fontWeight: 650, margin: "4px 4px 0" }}>План на день · 15 минут</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                <Btn primary label={done.length && done.length < PLAN.length ? "▶ Продолжить план" : "▶ Начать план"} onClick={() => { const n = PLAN.findIndex((_: unknown, i: number) => !done.includes(i)); go(n < 0 ? 0 : n, true); }} />
-                <span style={{ fontSize: 14, color: t.text.secondary }}>Сегодня выполнено: {done.length} из {PLAN.length}</span>
-              </div>
-              <Prog value={done.length / PLAN.length} />
-              <div style={{ ...card, gap: 0, padding: "6px 20px" }}>
-                {PLAN.map(([m, ic, nm, d]: [string, string, string, string], i: number) => (
-                  <div key={i} className="mt-fade" style={{ animationDelay: `${i * 60}ms`, borderTop: i ? `1px solid ${t.border.subtle}` : "none" }}>
-                    <div role="button" tabIndex={0} className="mt-plan" onClick={() => go(i, false)} onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => { if (e.key === "Enter" || e.key === " ") go(i, false); }} style={{ display: "flex", gap: 14, alignItems: "center", padding: "14px 0", cursor: "pointer" }}>
-                      <div style={{ flex: "0 0 auto", padding: "6px 10px", borderRadius: 999, background: done.includes(i) ? t.fill.successSubtle : t.fill.accentSubtle, color: done.includes(i) ? t.text.success : t.text.accent, fontSize: 13, fontWeight: 600 }}>{done.includes(i) ? "✓ " : ""}{m}</div>
-                      <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 16, fontWeight: 600, textDecoration: done.includes(i) ? "line-through" : "none", opacity: done.includes(i) ? 0.7 : 1 }}>{ic} {nm}</div><div style={{ fontSize: 14, color: t.text.secondary }}>{d}</div></div>
-                      <div className="mt-go" style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 4, padding: "8px 12px", borderRadius: 999, background: t.bg.subtle, color: t.text.accent, fontSize: 14, fontWeight: 600 }}>Начать <span style={{ fontSize: 16 }}>→</span></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 650, margin: "10px 4px 0" }}>Что говорит наука</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-                {TIPS.map(([ic, ttl, d, ev]: [string, string, string, string]) => (
-                  <div key={ttl} style={{ ...card, padding: 16, gap: 6, boxShadow: "none" }}>
-                    <span style={{ fontSize: 26 }}>{ic}</span>
-                    <span style={{ fontSize: 16, fontWeight: 600 }}>{ttl}</span>
-                    <span style={{ fontSize: 14, color: t.text.secondary, lineHeight: "20px" }}>{d}</span>
-                    <span style={{ alignSelf: "flex-start", fontSize: 12, padding: "3px 8px", borderRadius: 999, background: t.bg.subtle, color: t.text.tertiary }}>{ev}</span>
-                  </div>
-                ))}
-              </div>
-            </Fragment0>
-          ) : null}
-        </div>
-        <div style={{ textAlign: "center", fontSize: 13, color: t.text.tertiary }}>Рекорды, серия дней и выученные стихи сохраняются на этом устройстве.</div>
       </div>
+      {inTab ? <BottomNav tab={tab} onTab={(x: TabId) => { setTab(x); }} /> : null}
+      {lvl ? <LevelUp level={lvl} onClose={() => setLvl(null)} /> : null}
+      <span style={{ display: "none" }}>{g.level}</span>
     </div>
   );
 }

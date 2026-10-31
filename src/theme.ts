@@ -10,30 +10,40 @@ export type Theme = {
   font: { family: string; mono: string };
 };
 
-const font = { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' };
+// Bright game palette: [main, darker "3D" edge]
+export const PAL = {
+  green: ["#2FC85A", "#1E9C42"],
+  blue: ["#2E9BF0", "#1A76C2"],
+  purple: ["#A35BF0", "#7A38C4"],
+  orange: ["#FF8A1F", "#D96A00"],
+  yellow: ["#FFC531", "#E0A100"],
+  pink: ["#FF5C93", "#D23A6F"],
+  red: ["#FF4B4B", "#D42F2F"],
+} as const;
+
+const font = { family: '"Nunito", ui-rounded, "SF Pro Rounded", -apple-system, "Segoe UI", Roboto, sans-serif', mono: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
 export const LIGHT: Theme = {
   kind: "light",
-  bg: { base: "#f6f7fb", elevated: "#ffffff", subtle: "#eceef5" },
-  border: { default: "#d5d9e4", strong: "#a9b0c2", subtle: "#e4e7ef" },
-  text: { primary: "#151826", secondary: "#4b5165", tertiary: "#7c8296", accent: "#5b4cf0", danger: "#d23c4b", success: "#14895a", warning: "#b86e00", onColor: "#ffffff" },
-  fill: { accentSubtle: "#e8e5ff", dangerSubtle: "#fde6e9", successSubtle: "#dcf5e9", warningSubtle: "#fff1d6" },
-  dataviz: { categorical: ["#6a5cff", "#ff6fa8", "#18b4c9", "#ffb020", "#2fbf71", "#9b6bff"], negative: "#e5484d", other: "#9aa0b2" },
+  bg: { base: "#F7F9FC", elevated: "#FFFFFF", subtle: "#EEF2F7" },
+  border: { default: "#DCE3EC", strong: "#B9C4D3", subtle: "#E6EBF2" },
+  text: { primary: "#1F2A37", secondary: "#56657A", tertiary: "#8A97A8", accent: "#1A76C2", danger: "#E03A3A", success: "#1E9C42", warning: "#C77700", onColor: "#FFFFFF" },
+  fill: { accentSubtle: "#E3F1FD", dangerSubtle: "#FFE7E7", successSubtle: "#E1F8E7", warningSubtle: "#FFF3D6" },
+  dataviz: { categorical: [PAL.green[0], PAL.blue[0], PAL.purple[0], PAL.orange[0], PAL.yellow[0], PAL.pink[0]], negative: PAL.red[0], other: "#9AA6B6" },
   font,
 };
 
 export const DARK: Theme = {
   kind: "dark",
-  bg: { base: "#0d0f17", elevated: "#171a26", subtle: "#1f2333" },
-  border: { default: "#30364a", strong: "#4a5270", subtle: "#252a3b" },
-  text: { primary: "#f2f3f8", secondary: "#b3b8ca", tertiary: "#7e849a", accent: "#a69dff", danger: "#ff6b78", success: "#4fd99a", warning: "#ffbe55", onColor: "#ffffff" },
-  fill: { accentSubtle: "#2a2550", dangerSubtle: "#3f1d24", successSubtle: "#173b2b", warningSubtle: "#3d2e12" },
-  dataviz: { categorical: ["#7b6dff", "#ff6fa8", "#22c3d8", "#ffb020", "#36cf7f", "#a47dff"], negative: "#ff5d63", other: "#6b7186" },
+  bg: { base: "#121A24", elevated: "#1B2532", subtle: "#243142" },
+  border: { default: "#33445A", strong: "#4C6280", subtle: "#2A394C" },
+  text: { primary: "#F2F6FA", secondary: "#B4C0CE", tertiary: "#7F8FA3", accent: "#5DB4FF", danger: "#FF6B6B", success: "#4BDB75", warning: "#FFC94D", onColor: "#FFFFFF" },
+  fill: { accentSubtle: "#173452", dangerSubtle: "#46202A", successSubtle: "#173E26", warningSubtle: "#433410" },
+  dataviz: { categorical: [PAL.green[0], PAL.blue[0], PAL.purple[0], PAL.orange[0], PAL.yellow[0], PAL.pink[0]], negative: PAL.red[0], other: "#6B7A8F" },
   font,
 };
 
 const mq = () => window.matchMedia("(prefers-color-scheme: dark)");
-
 export function useGrokTheme(): Theme {
   const [dark, setDark] = useState<boolean>(() => mq().matches);
   useEffect(() => {

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
 const P = "rm:";
-function read<T>(k: string, d: T): T {
+export function read<T>(k: string, d: T): T {
   try { const v = localStorage.getItem(P + k); return v === null ? d : (JSON.parse(v) as T); } catch { return d; }
 }
-function write<T>(k: string, v: T) {
+export function write<T>(k: string, v: T) {
   try { localStorage.setItem(P + k, JSON.stringify(v)); } catch { /* ignore */ }
   window.dispatchEvent(new CustomEvent("rm-store", { detail: k }));
 }
@@ -21,7 +21,7 @@ export function usePersist<T>(k: string, d: T): [T, (v: T) => void] {
 
 const day = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 
-type Streak = { last: string; count: number; total: number };
+export type Streak = { last: string; count: number; total: number };
 export function markPractice() {
   const s = read<Streak>("streak", { last: "", count: 0, total: 0 });
   const today = day(new Date());
